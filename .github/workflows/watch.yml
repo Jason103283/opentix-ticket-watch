@@ -2,9 +2,6 @@ name: Check OPENTIX tickets
 on:
   schedule:
     - cron: '*/10 * * * *'
-  push:
-    paths:
-      - '.github/monitor-start'
   workflow_dispatch:
     inputs:
       test_notification:
@@ -18,7 +15,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   watch:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || vars.MONITOR_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
