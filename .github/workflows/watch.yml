@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
+    inputs:
+      test_notification:
+        description: '發送 LINE 測試訊息（不代表有票）'
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -10,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   watch:
-    if: ${{ vars.MONITOR_ENABLED == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -18,10 +23,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
-      - run: npm run check
+      - name: Test LINE and database
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notification }}
+        run: node test-connection.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+      - name: Install packages
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_notification }}
+        run: npm install --no-audit --no-fund
+      - name: Install browser
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_notification }}
+        run: npx playwright install --with-deps chromium
+      - name: Run unit tests
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_notification }}
+        run: npm test
+      - name: Check seats
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_notification }}
+        run: npm run check
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
