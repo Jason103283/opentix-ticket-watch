@@ -1,10 +1,12 @@
 import { chromium } from 'playwright';
 import { validCartUrl, decideObservation, shouldNotify } from './logic.mjs';
-const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID } = process.env;
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !LINE_CHANNEL_ACCESS_TOKEN || !LINE_USER_ID) throw new Error('缺少 Supabase 或 LINE GitHub Secrets，監控未啟動');
+const { SUPABASE_URL, SUPABASE_SECRET_KEY, LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID } = process.env;
+if (!SUPABASE_URL || !SUPABASE_SECRET_KEY || !LINE_CHANNEL_ACCESS_TOKEN || !LINE_USER_ID) throw new Error('缺少 Supabase 或 LINE GitHub Secrets，監控未啟動');
 if (SUPABASE_URL !== 'https://fxlbexjouxkbpibxhilc.supabase.co') throw new Error('Supabase URL 不正確');
 const base=SUPABASE_URL+'/rest/v1/ticket_watches';
-const headers={apikey:SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+SUPABASE_SERVICE_ROLE_KEY,'Content-Type':'application/json'};
+const headers={apikey:SUPABASE_SECRET_KEY,'Content-Type':'application/json'};
+if (SUPABASE_SECRET_KEY.startsWith('eyJ')) headers.Authorization='Bearer '+SUPABASE_SECRET_KEY;
+else if (!SUPABASE_SECRET_KEY.startsWith('sb_secret_')) throw new Error('Supabase Secret key 格式不正確');
 async function update(id,patch){const res=await fetch(base+'?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{...headers,Prefer:'return=minimal'},body:JSON.stringify(patch)});if(!res.ok)throw new Error('寫入狀態失敗 ('+res.status+')')}
 async function line(row,count){const text=`🎫 OPENTIX 票況提醒\n${row.title}\n偵測到 ${count} 個可選座位（含可能有資格限制的票種），請立即前往確認：\n${row.cart_url}`;const res=await fetch('https://api.line.me/v2/bot/message/push',{method:'POST',headers:{Authorization:'Bearer '+LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({to:LINE_USER_ID,messages:[{type:'text',text}]})});if(!res.ok)throw new Error('LINE 推播失敗 ('+res.status+')')}
 async function inspect(browser,row){if(!validCartUrl(row.cart_url))throw new Error('不是受支援的 OPENTIX 選位頁');const eventId=row.cart_url.split('/').at(-1);const page=await browser.newPage();try{let apiCount;const api=page.waitForResponse(r=>r.url()===`https://csm.api.opentix.life/events/${eventId}/seats`&&r.request().method()==='GET'&&r.status()===200,{timeout:40000}).then(async r=>{const data=await r.json();if(!Array.isArray(data.result)||!data.result.length)throw new Error('座位資料為空');apiCount=data.result.length});await page.goto(row.cart_url,{waitUntil:'domcontentloaded',timeout:45000});await api;await page.waitForSelector('circle.seat',{timeout:40000});await page.waitForTimeout(10000);if(!page.url().startsWith('https://www.opentix.life/cart/'))throw new Error('選位頁導向其他頁面');const snap=await page.evaluate(()=>({total:document.querySelectorAll('circle.seat').length,enabled:document.querySelectorAll('circle.seat[enabled="true"]').length}));snap.expected=apiCount;const status=decideObservation(snap);return {status,count:snap.enabled}}finally{await page.close()}}
