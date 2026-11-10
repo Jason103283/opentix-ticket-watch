@@ -1,0 +1,1 @@
+{"name":"opentix-ticket-watch","version":"0.1.0","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","check":"node monitor.mjs"},"dependencies":{"playwright":"1.51.1"}}
